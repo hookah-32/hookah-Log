@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Shisha Log</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=Bebas+Neue&display=swap" rel="stylesheet">
 <style>
 /* ===== リセット & 変数 ===== */
@@ -26,6 +27,15 @@
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;font-family:'Noto Sans JP',sans-serif;background:var(--bg);color:var(--text);overflow:hidden;font-size:15px}
+
+/* ===== ログイン画面 ===== */
+.login-wrap{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 24px;gap:20px;overflow-y:auto}
+.login-logo{font-family:'Bebas Neue',sans-serif;font-size:42px;letter-spacing:.14em;color:var(--accent-light,#7bb8ed)}
+.login-sub{font-size:13px;color:var(--text-sub);letter-spacing:.04em}
+.login-tabs{display:flex;width:100%;max-width:360px;border:1px solid var(--border);border-radius:var(--r-sm);overflow:hidden}
+.login-tab{flex:1;padding:11px;background:none;border:none;color:var(--text-sub);font-family:'Noto Sans JP',sans-serif;font-size:14px;cursor:pointer;transition:background .2s,color .2s}
+.login-tab.active{background:var(--accent);color:#0d1117;font-weight:700}
+.login-form{width:100%;max-width:360px;display:flex;flex-direction:column;gap:14px}
 
 /* ===== 画面管理 ===== */
 .screen{position:fixed;inset:0;display:none;flex-direction:column;background:var(--bg)}
@@ -447,8 +457,54 @@ textarea.f{height:auto;min-height:90px;padding:12px 14px;resize:vertical;line-he
 <body>
 <div id="app">
 
+<!-- ログイン画面 -->
+<div id="loginScreen" class="screen active">
+  <div class="login-wrap">
+    <div class="login-logo">SHISHA LOG</div>
+    <p class="login-sub">シーシャの記録をはじめよう</p>
+
+    <div class="login-tabs">
+      <button class="login-tab active" id="tabLogin">ログイン</button>
+      <button class="login-tab" id="tabSignup">新規登録</button>
+    </div>
+
+    <div class="login-form" id="loginForm">
+      <div class="fb">
+        <div class="fb-label">メールアドレス</div>
+        <input type="email" class="f" id="loginEmail" placeholder="example@email.com" autocomplete="email">
+      </div>
+      <div class="fb">
+        <div class="fb-label">パスワード</div>
+        <input type="password" class="f" id="loginPassword" placeholder="パスワードを入力" autocomplete="current-password">
+      </div>
+      <div id="loginError" class="errmsg" style="display:none"></div>
+      <button class="btn-save" id="btnLogin" style="margin-top:8px">ログイン</button>
+    </div>
+
+    <div class="login-form hidden" id="signupForm">
+      <div class="fb">
+        <div class="fb-label">ユーザー名</div>
+        <input type="text" class="f" id="signupUsername" placeholder="例：shisha_lover">
+      </div>
+      <div class="fb">
+        <div class="fb-label">メールアドレス</div>
+        <input type="email" class="f" id="signupEmail" placeholder="example@email.com" autocomplete="email">
+      </div>
+      <div class="fb">
+        <div class="fb-label">パスワード（8文字以上）</div>
+        <input type="password" class="f" id="signupPassword" placeholder="パスワードを入力" autocomplete="new-password">
+      </div>
+      <div id="signupError" class="errmsg" style="display:none"></div>
+      <button class="btn-save" id="btnSignup" style="margin-top:8px">アカウントを作成</button>
+      <p style="font-size:11px;color:var(--text-muted);text-align:center;margin-top:8px;line-height:1.6">登録後、確認メールが届きます。<br>メール内のリンクをタップして認証を完了してください。</p>
+    </div>
+
+    <div id="loginLoading" class="hidden" style="text-align:center;color:var(--text-sub);padding:20px;font-size:14px">処理中...</div>
+  </div>
+</div>
+
 <!-- ホーム画面 -->
-<div id="homeScreen" class="screen active">
+<div id="homeScreen" class="screen">
   <div class="home-wrap">
     <div class="home-logo">SHISHA LOG</div>
     <p class="home-sub">記録するタブを選択</p>
@@ -688,7 +744,7 @@ textarea.f{height:auto;min-height:90px;padding:12px 14px;resize:vertical;line-he
           <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;line-height:1.6">
             ※ Supabase連携後にログアウト・機種変更時のデータ引き継ぎが有効になります
           </p>
-          <button class="btn-save" style="opacity:.5;cursor:not-allowed" disabled>ログアウト（準備中）</button>
+          <button class="btn-save" id="btnLogout">ログアウト</button>
         </div>
 
       </div>
@@ -1148,9 +1204,155 @@ textarea.f{height:auto;min-height:90px;padding:12px 14px;resize:vertical;line-he
 </div><!-- /app -->
 <script>
 /* ===== ストレージ ===== */
+/* ===== Supabase設定 ===== */
+const SUPABASE_URL = 'https://nzdtkeyclvgzflicoreu.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im56ZHRrZXljbHZnemZsaWNvcmV1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0NDA4MjAsImV4cCI6MjA5MTAxNjgyMH0.lurPnrw8vLK4FiBuJTiJnyCl7WFbGgc5gQKIXMDf5Ow';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+let currentUser = null;
+
+/* ===== 認証処理 ===== */
+async function initAuth(){
+  // セッション確認
+  const { data: { session } } = await sb.auth.getSession();
+  if(session){
+    currentUser = session.user;
+    await loadUserProfile();
+    show('homeScreen');
+  } else {
+    show('loginScreen');
+  }
+
+  // 認証状態の変化を監視
+  sb.auth.onAuthStateChange(async (event, session) => {
+    if(event === 'SIGNED_IN' && session){
+      currentUser = session.user;
+      await loadUserProfile();
+      show('homeScreen');
+    } else if(event === 'SIGNED_OUT'){
+      currentUser = null;
+      show('loginScreen');
+    }
+  });
+}
+
+async function loadUserProfile(){
+  if(!currentUser) return;
+  const { data } = await sb.from('profiles').select('username').eq('id', currentUser.id).single();
+  if(data?.username){
+    localStorage.setItem('shisha_username', data.username);
+  }
+}
+
+async function signUp(){
+  const username = document.getElementById('signupUsername').value.trim();
+  const email = document.getElementById('signupEmail').value.trim();
+  const password = document.getElementById('signupPassword').value;
+  const errEl = document.getElementById('signupError');
+  errEl.style.display = 'none';
+
+  if(!username){ errEl.textContent = 'ユーザー名を入力してください'; errEl.style.display = 'block'; return; }
+  if(!email){ errEl.textContent = 'メールアドレスを入力してください'; errEl.style.display = 'block'; return; }
+  if(password.length < 8){ errEl.textContent = 'パスワードは8文字以上で入力してください'; errEl.style.display = 'block'; return; }
+
+  document.getElementById('loginLoading').classList.remove('hidden');
+  document.getElementById('signupForm').classList.add('hidden');
+
+  const { data, error } = await sb.auth.signUp({ email, password });
+  if(error){
+    document.getElementById('loginLoading').classList.add('hidden');
+    document.getElementById('signupForm').classList.remove('hidden');
+    errEl.textContent = error.message;
+    errEl.style.display = 'block';
+    return;
+  }
+  if(data.user){
+    await sb.from('profiles').upsert({ id: data.user.id, username });
+    localStorage.setItem('shisha_username', username);
+  }
+  document.getElementById('loginLoading').classList.add('hidden');
+  document.getElementById('signupForm').classList.remove('hidden');
+  alert('確認メールを送信しました。メール内のリンクをタップして認証を完了してください。');
+}
+
+async function login(){
+  const email = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  const errEl = document.getElementById('loginError');
+  errEl.style.display = 'none';
+
+  if(!email || !password){ errEl.textContent = 'メールアドレスとパスワードを入力してください'; errEl.style.display = 'block'; return; }
+
+  document.getElementById('loginLoading').classList.remove('hidden');
+  document.getElementById('loginForm').classList.add('hidden');
+
+  const { error } = await sb.auth.signInWithPassword({ email, password });
+  if(error){
+    document.getElementById('loginLoading').classList.add('hidden');
+    document.getElementById('loginForm').classList.remove('hidden');
+    errEl.textContent = 'メールアドレスまたはパスワードが正しくありません';
+    errEl.style.display = 'block';
+    return;
+  }
+}
+
+async function logout(){
+  await sb.auth.signOut();
+  localStorage.clear();
+  show('loginScreen');
+}
+
+/* ===== Supabaseデータ同期 ===== */
+async function syncToSupabase(){
+  if(!currentUser) return;
+  try{
+    // メイキング記録を同期
+    const making = Store.get();
+    if(making.length){
+      await sb.from('making_records').upsert(
+        making.map(r => ({ user_id: currentUser.id, data: r })),
+        { onConflict: 'user_id,data->id' }
+      );
+    }
+    // お店記録を同期
+    const shop = JSON.parse(localStorage.getItem('shisha_shop') || '[]');
+    if(shop.length){
+      await sb.from('shop_records').upsert(
+        shop.map(r => ({ user_id: currentUser.id, data: r })),
+        { onConflict: 'user_id,data->id' }
+      );
+    }
+  } catch(e){ console.error('同期エラー:', e); }
+}
+
+async function loadFromSupabase(){
+  if(!currentUser) return;
+  try{
+    // メイキング記録を取得
+    const { data: making } = await sb.from('making_records').select('data').eq('user_id', currentUser.id);
+    if(making?.length){
+      const records = making.map(r => r.data).sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
+      localStorage.setItem('shisha', JSON.stringify(records));
+    }
+    // お店記録を取得
+    const { data: shop } = await sb.from('shop_records').select('data').eq('user_id', currentUser.id);
+    if(shop?.length){
+      const records = shop.map(r => r.data).sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
+      localStorage.setItem('shisha_shop', JSON.stringify(records));
+    }
+  } catch(e){ console.error('データ取得エラー:', e); }
+}
+
 const Store={
   get(){return JSON.parse(localStorage.getItem('shisha')||'[]')},
-  save(r){const a=this.get();a.unshift(r);localStorage.setItem('shisha',JSON.stringify(a))},
+  save(r){
+    const a=this.get();a.unshift(r);localStorage.setItem('shisha',JSON.stringify(a));
+    // Supabaseに非同期保存
+    if(currentUser){
+      sb.from('making_records').insert({user_id:currentUser.id,data:r}).then(({error})=>{
+        if(error)console.error('making保存エラー:',error);
+      });
+    }
+  },
 
   // カスタムオプション（フィールド個別）
   getC(){return JSON.parse(localStorage.getItem('shisha_c')||'{}')},
@@ -1883,6 +2085,12 @@ function commitShopRec(rec){
   const arr=JSON.parse(localStorage.getItem('shisha_shop')||'[]');
   arr.unshift(rec);
   localStorage.setItem('shisha_shop',JSON.stringify(arr));
+  // Supabaseに非同期保存
+  if(currentUser){
+    sb.from('shop_records').insert({user_id:currentUser.id,data:rec}).then(({error})=>{
+      if(error)console.error('shop保存エラー:',error);
+    });
+  }
   show('mainScreen');
   renderShopCards();
 }
@@ -2422,6 +2630,11 @@ function initMyPage(){
     showPasswordDialog();
   });
 
+  // ログアウト
+  document.getElementById('btnLogout').addEventListener('click',()=>{
+    if(confirm('ログアウトしますか？')){logout();}
+  });
+
   // 権限トグル
   document.getElementById('toggleCamera').addEventListener('change',function(){
     localStorage.setItem('perm_camera',this.checked?'1':'0');
@@ -2784,10 +2997,32 @@ function receiveCard(){
   }catch{alert('コードの読み込みに失敗しました');}
 }
 
+// ログイン画面のタブ切替
+document.getElementById('tabLogin').addEventListener('click',()=>{
+  document.getElementById('tabLogin').classList.add('active');
+  document.getElementById('tabSignup').classList.remove('active');
+  document.getElementById('loginForm').classList.remove('hidden');
+  document.getElementById('signupForm').classList.add('hidden');
+});
+document.getElementById('tabSignup').addEventListener('click',()=>{
+  document.getElementById('tabSignup').classList.add('active');
+  document.getElementById('tabLogin').classList.remove('active');
+  document.getElementById('signupForm').classList.remove('hidden');
+  document.getElementById('loginForm').classList.add('hidden');
+});
+document.getElementById('btnLogin').addEventListener('click', login);
+document.getElementById('btnSignup').addEventListener('click', signUp);
+
 initOther();initPhotos();
 initSearchTab();
 initMyPage();
 initFriendTab();
+
+// 認証初期化（最後に実行）
+initAuth().then(()=>{
+  // ログイン済みならデータをSupabaseから取得
+  if(currentUser) loadFromSupabase();
+});
 </script>
 </body>
 </html>
